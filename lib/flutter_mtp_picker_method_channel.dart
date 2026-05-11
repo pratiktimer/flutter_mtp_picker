@@ -18,4 +18,19 @@ class MethodChannelFlutterMtpPicker extends FlutterMtpPickerPlatform {
         .map(MtpDevice.fromMap)
         .toList(growable: false);
   }
+
+  @override
+  Future<List<MtpObject>> listChildren({
+    required String deviceId,
+    required String objectId,
+  }) async {
+    final children = await methodChannel.invokeListMethod<Object?>(
+      'listChildren',
+      <String, Object?>{'deviceId': deviceId, 'objectId': objectId},
+    );
+    return (children ?? <Object?>[])
+        .cast<Map<Object?, Object?>>()
+        .map(MtpObject.fromMap)
+        .toList(growable: false);
+  }
 }

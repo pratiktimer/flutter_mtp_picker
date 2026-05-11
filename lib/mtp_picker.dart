@@ -7,4 +7,14 @@ class MtpPicker {
   static Future<List<MtpDevice>> getDevices() {
     return FlutterMtpPickerPlatform.instance.getDevices();
   }
+
+  static Future<List<MtpObject>> listChildren({
+    required String deviceId,
+    required String objectId,
+  }) {
+    return FlutterMtpPickerPlatform.instance.listChildren(
+      deviceId: deviceId,
+      objectId: objectId,
+    );
+  }
 }

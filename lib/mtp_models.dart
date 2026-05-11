@@ -47,6 +47,21 @@ class MtpObject {
   Map<String, Object?> toMap() {
     return <String, Object?>{'id': id, 'name': name, 'isFolder': isFolder};
   }
+
+  @override
+  String toString() => 'MtpObject(id: $id, name: $name, isFolder: $isFolder)';
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is MtpObject &&
+            other.id == id &&
+            other.name == name &&
+            other.isFolder == isFolder;
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, isFolder);
 }
 
 class MtpFile {
@@ -67,4 +82,19 @@ class MtpFile {
   Map<String, Object?> toMap() {
     return <String, Object?>{'id': id, 'name': name, 'size': size};
   }
+
+  @override
+  String toString() => 'MtpFile(id: $id, name: $name, size: $size)';
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is MtpFile &&
+            other.id == id &&
+            other.name == name &&
+            other.size == size;
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, size);
 }

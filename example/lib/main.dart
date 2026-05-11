@@ -17,6 +17,10 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   List<MtpDevice> _devices = const <MtpDevice>[];
+  MtpDevice? _selectedDevice;
+  List<MtpObject> _children = const <MtpObject>[];
+  final List<MtpObject> _path = <MtpObject>[];
+  bool _loadingChildren = false;
   String? _error;
 
   @override
@@ -43,6 +47,74 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  Future<void> _openDevice(MtpDevice device) async {
+    setState(() {
+      _selectedDevice = device;
+      _children = const <MtpObject>[];
+      _path.clear();
+      _loadingChildren = true;
+      _error = null;
+    });
+
+    await _loadChildren(deviceId: device.id, objectId: 'ROOT');
+  }
+
+  Future<void> _openFolder(MtpObject folder) async {
+    final device = _selectedDevice;
+    if (device == null || !folder.isFolder) return;
+
+    setState(() {
+      _path.add(folder);
+      _children = const <MtpObject>[];
+      _loadingChildren = true;
+      _error = null;
+    });
+
+    await _loadChildren(deviceId: device.id, objectId: folder.id);
+  }
+
+  Future<void> _goBack() async {
+    final device = _selectedDevice;
+    if (device == null || _path.isEmpty) return;
+
+    setState(() {
+      _path.removeLast();
+      _children = const <MtpObject>[];
+      _loadingChildren = true;
+      _error = null;
+    });
+
+    await _loadChildren(
+      deviceId: device.id,
+      objectId: _path.isEmpty ? 'ROOT' : _path.last.id,
+    );
+  }
+
+  Future<void> _loadChildren({
+    required String deviceId,
+    required String objectId,
+  }) async {
+    List<MtpObject> children;
+    String? error;
+    try {
+      children = await MtpPicker.listChildren(
+        deviceId: deviceId,
+        objectId: objectId,
+      );
+    } on PlatformException catch (e) {
+      children = const <MtpObject>[];
+      error = e.message ?? 'Failed to list MTP folder.';
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _children = children;
+      _loadingChildren = false;
+      _error = error;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -57,7 +129,55 @@ class _MyAppState extends State<MyApp> {
               const Text('No MTP devices connected.')
             else
               for (final device in _devices)
-                ListTile(title: Text(device.name), subtitle: Text(device.id)),
+                ListTile(
+                  title: Text(device.name),
+                  subtitle: Text(device.id),
+                  selected: _selectedDevice?.id == device.id,
+                  onTap: () => _openDevice(device),
+                ),
+            if (_selectedDevice != null) ...<Widget>[
+              const Divider(height: 32),
+              Row(
+                children: <Widget>[
+                  IconButton(
+                    onPressed: _path.isEmpty || _loadingChildren
+                        ? null
+                        : _goBack,
+                    icon: const Icon(Icons.arrow_back),
+                    tooltip: 'Back',
+                  ),
+                  Expanded(
+                    child: Text(
+                      _path.isEmpty
+                          ? _selectedDevice!.name
+                          : _path
+                                .map((MtpObject object) => object.name)
+                                .join(' / '),
+                    ),
+                  ),
+                ],
+              ),
+              if (_loadingChildren)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_children.isEmpty)
+                const ListTile(title: Text('No child objects.'))
+              else
+                for (final child in _children)
+                  ListTile(
+                    leading: Icon(
+                      child.isFolder
+                          ? Icons.folder_outlined
+                          : Icons.insert_drive_file_outlined,
+                    ),
+                    title: Text(child.name),
+                    subtitle: Text(child.id),
+                    enabled: child.isFolder,
+                    onTap: child.isFolder ? () => _openFolder(child) : null,
+                  ),
+            ],
           ],
         ),
       ),

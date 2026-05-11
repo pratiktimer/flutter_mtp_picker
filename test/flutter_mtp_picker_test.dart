@@ -11,6 +11,14 @@ class MockFlutterMtpPickerPlatform
   Future<List<MtpDevice>> getDevices() => Future.value(const <MtpDevice>[
     MtpDevice(id: 'device-1', name: 'Android Phone'),
   ]);
+
+  @override
+  Future<List<MtpObject>> listChildren({
+    required String deviceId,
+    required String objectId,
+  }) => Future.value(const <MtpObject>[
+    MtpObject(id: 'storage-1', name: 'Internal shared storage', isFolder: true),
+  ]);
 }
 
 void main() {
@@ -28,5 +36,21 @@ void main() {
     expect(await MtpPicker.getDevices(), const <MtpDevice>[
       MtpDevice(id: 'device-1', name: 'Android Phone'),
     ]);
+  });
+
+  test('listChildren', () async {
+    MockFlutterMtpPickerPlatform fakePlatform = MockFlutterMtpPickerPlatform();
+    FlutterMtpPickerPlatform.instance = fakePlatform;
+
+    expect(
+      await MtpPicker.listChildren(deviceId: 'device-1', objectId: 'ROOT'),
+      const <MtpObject>[
+        MtpObject(
+          id: 'storage-1',
+          name: 'Internal shared storage',
+          isFolder: true,
+        ),
+      ],
+    );
   });
 }

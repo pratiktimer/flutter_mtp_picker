@@ -27,4 +27,11 @@ abstract class FlutterMtpPickerPlatform extends PlatformInterface {
   Future<List<MtpDevice>> getDevices() {
     throw UnimplementedError('getDevices() has not been implemented.');
   }
+
+  Future<List<MtpObject>> listChildren({
+    required String deviceId,
+    required String objectId,
+  }) {
+    throw UnimplementedError('listChildren() has not been implemented.');
+  }
 }

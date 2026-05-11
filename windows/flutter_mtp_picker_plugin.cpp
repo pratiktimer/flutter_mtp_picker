@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <PortableDeviceApi.h>
+#include <PortableDevice.h>
 
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
@@ -12,6 +13,7 @@
 
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace flutter_mtp_picker {
@@ -33,6 +35,22 @@ std::string WideToUtf8(const wchar_t* value) {
   std::string result(static_cast<size_t>(size - 1), '\0');
   WideCharToMultiByte(CP_UTF8, 0, value, -1, result.data(), size, nullptr,
                       nullptr);
+  return result;
+}
+
+std::wstring Utf8ToWide(const std::string& value) {
+  if (value.empty()) {
+    return std::wstring();
+  }
+
+  const int size =
+      MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, nullptr, 0);
+  if (size <= 0) {
+    return std::wstring();
+  }
+
+  std::wstring result(static_cast<size_t>(size - 1), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, result.data(), size);
   return result;
 }
 
@@ -147,6 +165,213 @@ HRESULT EnumerateMtpDevices(flutter::EncodableList* devices) {
   return S_OK;
 }
 
+HRESULT CreateClientInfo(IPortableDeviceValues** client_info) {
+  ComPtr<IPortableDeviceValues> values;
+  HRESULT hr = CoCreateInstance(CLSID_PortableDeviceValues, nullptr,
+                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&values));
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  values->SetStringValue(WPD_CLIENT_NAME, L"flutter_mtp_picker");
+  values->SetUnsignedIntegerValue(WPD_CLIENT_MAJOR_VERSION, 1);
+  values->SetUnsignedIntegerValue(WPD_CLIENT_MINOR_VERSION, 0);
+  values->SetUnsignedIntegerValue(WPD_CLIENT_REVISION, 0);
+
+  *client_info = values.Detach();
+  return S_OK;
+}
+
+HRESULT OpenPortableDevice(const std::string& device_id,
+                           IPortableDevice** device) {
+  ComPtr<IPortableDevice> portable_device;
+  HRESULT hr = CoCreateInstance(CLSID_PortableDevice, nullptr,
+                                CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&portable_device));
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDeviceValues> client_info;
+  hr = CreateClientInfo(&client_info);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  const std::wstring wide_device_id = Utf8ToWide(device_id);
+  if (wide_device_id.empty()) {
+    return E_INVALIDARG;
+  }
+
+  hr = portable_device->Open(wide_device_id.c_str(), client_info.Get());
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  *device = portable_device.Detach();
+  return S_OK;
+}
+
+HRESULT CreateObjectPropertyKeys(IPortableDeviceKeyCollection** keys) {
+  ComPtr<IPortableDeviceKeyCollection> key_collection;
+  HRESULT hr = CoCreateInstance(CLSID_PortableDeviceKeyCollection, nullptr,
+                                CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&key_collection));
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  hr = key_collection->Add(WPD_OBJECT_NAME);
+  if (FAILED(hr)) {
+    return hr;
+  }
+  hr = key_collection->Add(WPD_OBJECT_ORIGINAL_FILE_NAME);
+  if (FAILED(hr)) {
+    return hr;
+  }
+  hr = key_collection->Add(WPD_OBJECT_CONTENT_TYPE);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  *keys = key_collection.Detach();
+  return S_OK;
+}
+
+std::string GetStringProperty(IPortableDeviceValues* values,
+                              const PROPERTYKEY& key) {
+  PWSTR value = nullptr;
+  const HRESULT hr = values->GetStringValue(key, &value);
+  if (FAILED(hr) || value == nullptr) {
+    return "";
+  }
+
+  std::string result = WideToUtf8(value);
+  CoTaskMemFree(value);
+  return result;
+}
+
+bool IsFolderContentType(const GUID& content_type) {
+  return IsEqualGUID(content_type, WPD_CONTENT_TYPE_FOLDER) ||
+         IsEqualGUID(content_type, WPD_CONTENT_TYPE_FUNCTIONAL_OBJECT);
+}
+
+HRESULT AppendObject(IPortableDeviceProperties* properties,
+                     IPortableDeviceKeyCollection* keys,
+                     const wchar_t* object_id,
+                     flutter::EncodableList* children) {
+  ComPtr<IPortableDeviceValues> values;
+  HRESULT hr = properties->GetValues(object_id, keys, &values);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  GUID content_type = GUID_NULL;
+  values->GetGuidValue(WPD_OBJECT_CONTENT_TYPE, &content_type);
+
+  std::string name = GetStringProperty(values.Get(), WPD_OBJECT_ORIGINAL_FILE_NAME);
+  if (name.empty()) {
+    name = GetStringProperty(values.Get(), WPD_OBJECT_NAME);
+  }
+  if (name.empty()) {
+    name = WideToUtf8(object_id);
+  }
+
+  flutter::EncodableMap child;
+  child[flutter::EncodableValue("id")] =
+      flutter::EncodableValue(WideToUtf8(object_id));
+  child[flutter::EncodableValue("name")] = flutter::EncodableValue(name);
+  child[flutter::EncodableValue("isFolder")] =
+      flutter::EncodableValue(IsFolderContentType(content_type));
+  children->push_back(flutter::EncodableValue(child));
+
+  return S_OK;
+}
+
+HRESULT ListMtpChildren(const std::string& device_id,
+                        const std::string& object_id,
+                        flutter::EncodableList* children) {
+  ScopedComInitializer com;
+  HRESULT hr = com.result();
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDevice> device;
+  hr = OpenPortableDevice(device_id, &device);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDeviceContent> content;
+  hr = device->Content(&content);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDeviceProperties> properties;
+  hr = content->Properties(&properties);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDeviceKeyCollection> keys;
+  hr = CreateObjectPropertyKeys(&keys);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  const std::wstring parent_id =
+      object_id == "ROOT" ? std::wstring(WPD_DEVICE_OBJECT_ID)
+                          : Utf8ToWide(object_id);
+  if (parent_id.empty()) {
+    return E_INVALIDARG;
+  }
+
+  ComPtr<IEnumPortableDeviceObjectIDs> enum_object_ids;
+  hr = content->EnumObjects(0, parent_id.c_str(), nullptr, &enum_object_ids);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  constexpr DWORD kBatchSize = 16;
+  PWSTR object_ids[kBatchSize] = {};
+  DWORD fetched = 0;
+
+  while (SUCCEEDED(hr = enum_object_ids->Next(kBatchSize, object_ids, &fetched)) &&
+         fetched > 0) {
+    for (DWORD i = 0; i < fetched; ++i) {
+      if (object_ids[i] != nullptr) {
+        const HRESULT append_hr =
+            AppendObject(properties.Get(), keys.Get(), object_ids[i], children);
+        CoTaskMemFree(object_ids[i]);
+        object_ids[i] = nullptr;
+        if (FAILED(append_hr)) {
+          return append_hr;
+        }
+      }
+    }
+  }
+
+  if (hr == S_FALSE) {
+    return S_OK;
+  }
+
+  return hr;
+}
+
+bool ReadStringArgument(const flutter::EncodableMap& arguments,
+                        const char* key,
+                        std::string* value) {
+  const auto it = arguments.find(flutter::EncodableValue(key));
+  if (it == arguments.end() || !std::holds_alternative<std::string>(it->second)) {
+    return false;
+  }
+
+  *value = std::get<std::string>(it->second);
+  return true;
+}
+
 void ReplyWithHResultError(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result,
     const std::string& operation,
@@ -192,6 +417,32 @@ void FlutterMtpPickerPlugin::HandleMethodCall(
     }
 
     result->Success(flutter::EncodableValue(devices));
+  } else if (method_call.method_name().compare("listChildren") == 0) {
+    const auto* arguments =
+        std::get_if<flutter::EncodableMap>(method_call.arguments());
+    if (arguments == nullptr) {
+      result->Error("invalid_arguments", "listChildren expects an argument map.");
+      return;
+    }
+
+    std::string device_id;
+    std::string object_id;
+    if (!ReadStringArgument(*arguments, "deviceId", &device_id) ||
+        !ReadStringArgument(*arguments, "objectId", &object_id)) {
+      result->Error(
+          "invalid_arguments",
+          "listChildren requires string arguments: deviceId and objectId.");
+      return;
+    }
+
+    flutter::EncodableList children;
+    const HRESULT hr = ListMtpChildren(device_id, object_id, &children);
+    if (FAILED(hr)) {
+      ReplyWithHResultError(std::move(result), "listChildren", hr);
+      return;
+    }
+
+    result->Success(flutter::EncodableValue(children));
   } else {
     result->NotImplemented();
   }
