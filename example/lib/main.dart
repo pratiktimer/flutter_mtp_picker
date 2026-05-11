@@ -21,6 +21,7 @@ class _MyAppState extends State<MyApp> {
   List<MtpObject> _children = const <MtpObject>[];
   List<MtpFile> _mediaFiles = const <MtpFile>[];
   final List<MtpObject> _path = <MtpObject>[];
+  MtpFolderSelection? _pickedFolder;
   bool _loadingChildren = false;
   bool _loadingMedia = false;
   String? _error;
@@ -155,6 +156,15 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  Future<void> _pickFolder() async {
+    final selection = await MtpPicker.pickFolder(context);
+    if (!mounted || selection == null) return;
+
+    setState(() {
+      _pickedFolder = selection;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -163,6 +173,24 @@ class _MyAppState extends State<MyApp> {
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: _pickFolder,
+                icon: const Icon(Icons.folder_open_outlined),
+                label: const Text('Pick MTP folder'),
+              ),
+            ),
+            if (_pickedFolder != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  'Picked: ${_pickedFolder!.device.name} / '
+                  '${_pickedFolder!.folder.name}\n'
+                  'Folder ID: ${_pickedFolder!.folder.id}',
+                ),
+              ),
+            const Divider(height: 32),
             if (_error != null)
               Text(_error!, style: Theme.of(context).textTheme.bodyLarge)
             else if (_devices.isEmpty)

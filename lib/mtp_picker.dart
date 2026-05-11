@@ -1,3 +1,6 @@
+import 'package:flutter/widgets.dart';
+
+import 'mtp_folder_picker.dart';
 import 'flutter_mtp_picker_platform_interface.dart';
 import 'mtp_models.dart';
 
@@ -28,5 +31,9 @@ class MtpPicker {
       folderId: folderId,
       extensions: extensions,
     );
+  }
+
+  static Future<MtpFolderSelection?> pickFolder(BuildContext context) {
+    return MtpFolderPicker.pickFolder(context);
   }
 }

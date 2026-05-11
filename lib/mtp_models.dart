@@ -98,3 +98,24 @@ class MtpFile {
   @override
   int get hashCode => Object.hash(id, name, size);
 }
+
+class MtpFolderSelection {
+  const MtpFolderSelection({required this.device, required this.folder});
+
+  final MtpDevice device;
+  final MtpObject folder;
+
+  @override
+  String toString() => 'MtpFolderSelection(device: $device, folder: $folder)';
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is MtpFolderSelection &&
+            other.device == device &&
+            other.folder == folder;
+  }
+
+  @override
+  int get hashCode => Object.hash(device, folder);
+}
