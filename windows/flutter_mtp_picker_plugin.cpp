@@ -12,6 +12,7 @@
 #include <wrl/client.h>
 
 #include <memory>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -36,6 +37,31 @@ std::string WideToUtf8(const wchar_t* value) {
   WideCharToMultiByte(CP_UTF8, 0, value, -1, result.data(), size, nullptr,
                       nullptr);
   return result;
+}
+
+std::string ToLowerAscii(std::string value) {
+  for (char& character : value) {
+    if (character >= 'A' && character <= 'Z') {
+      character = static_cast<char>(character - 'A' + 'a');
+    }
+  }
+  return value;
+}
+
+std::string NormalizeExtension(std::string extension) {
+  extension = ToLowerAscii(extension);
+  if (!extension.empty() && extension.front() == '.') {
+    extension.erase(extension.begin());
+  }
+  return extension;
+}
+
+std::string FileExtension(const std::string& name) {
+  const size_t dot = name.find_last_of('.');
+  if (dot == std::string::npos || dot == name.size() - 1) {
+    return "";
+  }
+  return ToLowerAscii(name.substr(dot + 1));
 }
 
 std::wstring Utf8ToWide(const std::string& value) {
@@ -233,6 +259,10 @@ HRESULT CreateObjectPropertyKeys(IPortableDeviceKeyCollection** keys) {
   if (FAILED(hr)) {
     return hr;
   }
+  hr = key_collection->Add(WPD_OBJECT_SIZE);
+  if (FAILED(hr)) {
+    return hr;
+  }
 
   *keys = key_collection.Detach();
   return S_OK;
@@ -254,6 +284,16 @@ std::string GetStringProperty(IPortableDeviceValues* values,
 bool IsFolderContentType(const GUID& content_type) {
   return IsEqualGUID(content_type, WPD_CONTENT_TYPE_FOLDER) ||
          IsEqualGUID(content_type, WPD_CONTENT_TYPE_FUNCTIONAL_OBJECT);
+}
+
+uint64_t GetUnsignedLargeIntegerProperty(IPortableDeviceValues* values,
+                                         const PROPERTYKEY& key) {
+  ULONGLONG value = 0;
+  const HRESULT hr = values->GetUnsignedLargeIntegerValue(key, &value);
+  if (FAILED(hr)) {
+    return 0;
+  }
+  return static_cast<uint64_t>(value);
 }
 
 HRESULT AppendObject(IPortableDeviceProperties* properties,
@@ -286,6 +326,114 @@ HRESULT AppendObject(IPortableDeviceProperties* properties,
   children->push_back(flutter::EncodableValue(child));
 
   return S_OK;
+}
+
+HRESULT ReadObjectInfo(IPortableDeviceProperties* properties,
+                       IPortableDeviceKeyCollection* keys,
+                       const wchar_t* object_id,
+                       std::string* name,
+                       bool* is_folder,
+                       uint64_t* size) {
+  ComPtr<IPortableDeviceValues> values;
+  HRESULT hr = properties->GetValues(object_id, keys, &values);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  GUID content_type = GUID_NULL;
+  values->GetGuidValue(WPD_OBJECT_CONTENT_TYPE, &content_type);
+
+  *name = GetStringProperty(values.Get(), WPD_OBJECT_ORIGINAL_FILE_NAME);
+  if (name->empty()) {
+    *name = GetStringProperty(values.Get(), WPD_OBJECT_NAME);
+  }
+  if (name->empty()) {
+    *name = WideToUtf8(object_id);
+  }
+
+  *is_folder = IsFolderContentType(content_type);
+  *size = GetUnsignedLargeIntegerProperty(values.Get(), WPD_OBJECT_SIZE);
+  return S_OK;
+}
+
+HRESULT AppendMediaFile(const wchar_t* object_id,
+                        const std::string& name,
+                        uint64_t size,
+                        flutter::EncodableList* files) {
+  flutter::EncodableMap file;
+  file[flutter::EncodableValue("id")] =
+      flutter::EncodableValue(WideToUtf8(object_id));
+  file[flutter::EncodableValue("name")] = flutter::EncodableValue(name);
+  file[flutter::EncodableValue("size")] =
+      flutter::EncodableValue(static_cast<int64_t>(size));
+  files->push_back(flutter::EncodableValue(file));
+  return S_OK;
+}
+
+bool MatchesExtension(const std::string& name,
+                      const std::set<std::string>& extensions) {
+  if (extensions.empty()) {
+    return true;
+  }
+  return extensions.find(FileExtension(name)) != extensions.end();
+}
+
+HRESULT TraverseMediaFiles(IPortableDeviceContent* content,
+                           IPortableDeviceProperties* properties,
+                           IPortableDeviceKeyCollection* keys,
+                           const std::wstring& parent_id,
+                           const std::set<std::string>& extensions,
+                           flutter::EncodableList* files) {
+  ComPtr<IEnumPortableDeviceObjectIDs> enum_object_ids;
+  HRESULT hr = content->EnumObjects(0, parent_id.c_str(), nullptr,
+                                    &enum_object_ids);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  constexpr DWORD kBatchSize = 16;
+  PWSTR object_ids[kBatchSize] = {};
+  DWORD fetched = 0;
+
+  while (SUCCEEDED(hr = enum_object_ids->Next(kBatchSize, object_ids, &fetched)) &&
+         fetched > 0) {
+    for (DWORD i = 0; i < fetched; ++i) {
+      if (object_ids[i] == nullptr) {
+        continue;
+      }
+
+      std::string name;
+      bool is_folder = false;
+      uint64_t size = 0;
+      const HRESULT info_hr = ReadObjectInfo(
+          properties, keys, object_ids[i], &name, &is_folder, &size);
+      if (FAILED(info_hr)) {
+        CoTaskMemFree(object_ids[i]);
+        object_ids[i] = nullptr;
+        return info_hr;
+      }
+
+      HRESULT child_hr = S_OK;
+      if (is_folder) {
+        child_hr = TraverseMediaFiles(content, properties, keys, object_ids[i],
+                                      extensions, files);
+      } else if (MatchesExtension(name, extensions)) {
+        child_hr = AppendMediaFile(object_ids[i], name, size, files);
+      }
+
+      CoTaskMemFree(object_ids[i]);
+      object_ids[i] = nullptr;
+      if (FAILED(child_hr)) {
+        return child_hr;
+      }
+    }
+  }
+
+  if (hr == S_FALSE) {
+    return S_OK;
+  }
+
+  return hr;
 }
 
 HRESULT ListMtpChildren(const std::string& device_id,
@@ -360,6 +508,51 @@ HRESULT ListMtpChildren(const std::string& device_id,
   return hr;
 }
 
+HRESULT ListMtpMediaFiles(const std::string& device_id,
+                          const std::string& folder_id,
+                          const std::set<std::string>& extensions,
+                          flutter::EncodableList* files) {
+  ScopedComInitializer com;
+  HRESULT hr = com.result();
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDevice> device;
+  hr = OpenPortableDevice(device_id, &device);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDeviceContent> content;
+  hr = device->Content(&content);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDeviceProperties> properties;
+  hr = content->Properties(&properties);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDeviceKeyCollection> keys;
+  hr = CreateObjectPropertyKeys(&keys);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  const std::wstring parent_id =
+      folder_id == "ROOT" ? std::wstring(WPD_DEVICE_OBJECT_ID)
+                          : Utf8ToWide(folder_id);
+  if (parent_id.empty()) {
+    return E_INVALIDARG;
+  }
+
+  return TraverseMediaFiles(content.Get(), properties.Get(), keys.Get(),
+                            parent_id, extensions, files);
+}
+
 bool ReadStringArgument(const flutter::EncodableMap& arguments,
                         const char* key,
                         std::string* value) {
@@ -369,6 +562,31 @@ bool ReadStringArgument(const flutter::EncodableMap& arguments,
   }
 
   *value = std::get<std::string>(it->second);
+  return true;
+}
+
+bool ReadStringListArgument(const flutter::EncodableMap& arguments,
+                            const char* key,
+                            std::set<std::string>* values) {
+  const auto it = arguments.find(flutter::EncodableValue(key));
+  if (it == arguments.end() ||
+      !std::holds_alternative<flutter::EncodableList>(it->second)) {
+    return false;
+  }
+
+  const auto& list = std::get<flutter::EncodableList>(it->second);
+  for (const flutter::EncodableValue& item : list) {
+    if (!std::holds_alternative<std::string>(item)) {
+      return false;
+    }
+
+    const std::string normalized =
+        NormalizeExtension(std::get<std::string>(item));
+    if (!normalized.empty()) {
+      values->insert(normalized);
+    }
+  }
+
   return true;
 }
 
@@ -443,6 +661,36 @@ void FlutterMtpPickerPlugin::HandleMethodCall(
     }
 
     result->Success(flutter::EncodableValue(children));
+  } else if (method_call.method_name().compare("listMediaFiles") == 0) {
+    const auto* arguments =
+        std::get_if<flutter::EncodableMap>(method_call.arguments());
+    if (arguments == nullptr) {
+      result->Error("invalid_arguments",
+                    "listMediaFiles expects an argument map.");
+      return;
+    }
+
+    std::string device_id;
+    std::string folder_id;
+    std::set<std::string> extensions;
+    if (!ReadStringArgument(*arguments, "deviceId", &device_id) ||
+        !ReadStringArgument(*arguments, "folderId", &folder_id) ||
+        !ReadStringListArgument(*arguments, "extensions", &extensions)) {
+      result->Error(
+          "invalid_arguments",
+          "listMediaFiles requires deviceId, folderId, and extensions.");
+      return;
+    }
+
+    flutter::EncodableList files;
+    const HRESULT hr =
+        ListMtpMediaFiles(device_id, folder_id, extensions, &files);
+    if (FAILED(hr)) {
+      ReplyWithHResultError(std::move(result), "listMediaFiles", hr);
+      return;
+    }
+
+    result->Success(flutter::EncodableValue(files));
   } else {
     result->NotImplemented();
   }

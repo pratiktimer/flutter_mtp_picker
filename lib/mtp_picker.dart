@@ -17,4 +17,16 @@ class MtpPicker {
       objectId: objectId,
     );
   }
+
+  static Future<List<MtpFile>> listMediaFiles({
+    required String deviceId,
+    required String folderId,
+    required List<String> extensions,
+  }) {
+    return FlutterMtpPickerPlatform.instance.listMediaFiles(
+      deviceId: deviceId,
+      folderId: folderId,
+      extensions: extensions,
+    );
+  }
 }

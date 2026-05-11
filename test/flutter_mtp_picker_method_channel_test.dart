@@ -22,6 +22,16 @@ void main() {
             ];
           }
 
+          if (methodCall.method == 'listMediaFiles') {
+            return <Map<String, Object?>>[
+              <String, Object?>{
+                'id': 'file-1',
+                'name': 'lesson1.mp4',
+                'size': 123456,
+              },
+            ];
+          }
+
           return <Map<String, Object?>>[
             <String, Object?>{'id': 'device-1', 'name': 'Android Phone'},
           ];
@@ -49,6 +59,17 @@ void main() {
           isFolder: true,
         ),
       ],
+    );
+  });
+
+  test('listMediaFiles', () async {
+    expect(
+      await platform.listMediaFiles(
+        deviceId: 'device-1',
+        folderId: 'storage-1',
+        extensions: const <String>['mp4', '.mkv', 'avi'],
+      ),
+      const <MtpFile>[MtpFile(id: 'file-1', name: 'lesson1.mp4', size: 123456)],
     );
   });
 }

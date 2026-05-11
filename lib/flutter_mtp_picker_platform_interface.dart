@@ -34,4 +34,12 @@ abstract class FlutterMtpPickerPlatform extends PlatformInterface {
   }) {
     throw UnimplementedError('listChildren() has not been implemented.');
   }
+
+  Future<List<MtpFile>> listMediaFiles({
+    required String deviceId,
+    required String folderId,
+    required List<String> extensions,
+  }) {
+    throw UnimplementedError('listMediaFiles() has not been implemented.');
+  }
 }

@@ -33,4 +33,24 @@ class MethodChannelFlutterMtpPicker extends FlutterMtpPickerPlatform {
         .map(MtpObject.fromMap)
         .toList(growable: false);
   }
+
+  @override
+  Future<List<MtpFile>> listMediaFiles({
+    required String deviceId,
+    required String folderId,
+    required List<String> extensions,
+  }) async {
+    final files = await methodChannel.invokeListMethod<Object?>(
+      'listMediaFiles',
+      <String, Object?>{
+        'deviceId': deviceId,
+        'folderId': folderId,
+        'extensions': extensions,
+      },
+    );
+    return (files ?? <Object?>[])
+        .cast<Map<Object?, Object?>>()
+        .map(MtpFile.fromMap)
+        .toList(growable: false);
+  }
 }

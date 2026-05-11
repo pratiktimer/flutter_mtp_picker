@@ -19,8 +19,10 @@ class _MyAppState extends State<MyApp> {
   List<MtpDevice> _devices = const <MtpDevice>[];
   MtpDevice? _selectedDevice;
   List<MtpObject> _children = const <MtpObject>[];
+  List<MtpFile> _mediaFiles = const <MtpFile>[];
   final List<MtpObject> _path = <MtpObject>[];
   bool _loadingChildren = false;
+  bool _loadingMedia = false;
   String? _error;
 
   @override
@@ -51,8 +53,10 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       _selectedDevice = device;
       _children = const <MtpObject>[];
+      _mediaFiles = const <MtpFile>[];
       _path.clear();
       _loadingChildren = true;
+      _loadingMedia = false;
       _error = null;
     });
 
@@ -66,7 +70,9 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       _path.add(folder);
       _children = const <MtpObject>[];
+      _mediaFiles = const <MtpFile>[];
       _loadingChildren = true;
+      _loadingMedia = false;
       _error = null;
     });
 
@@ -80,7 +86,9 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       _path.removeLast();
       _children = const <MtpObject>[];
+      _mediaFiles = const <MtpFile>[];
       _loadingChildren = true;
+      _loadingMedia = false;
       _error = null;
     });
 
@@ -111,6 +119,38 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       _children = children;
       _loadingChildren = false;
+      _error = error;
+    });
+  }
+
+  Future<void> _scanVideos() async {
+    final device = _selectedDevice;
+    if (device == null) return;
+
+    setState(() {
+      _mediaFiles = const <MtpFile>[];
+      _loadingMedia = true;
+      _error = null;
+    });
+
+    List<MtpFile> files;
+    String? error;
+    try {
+      files = await MtpPicker.listMediaFiles(
+        deviceId: device.id,
+        folderId: _path.isEmpty ? 'ROOT' : _path.last.id,
+        extensions: const <String>['mp4', 'mkv', 'avi'],
+      );
+    } on PlatformException catch (e) {
+      files = const <MtpFile>[];
+      error = e.message ?? 'Failed to scan media files.';
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _mediaFiles = files;
+      _loadingMedia = false;
       _error = error;
     });
   }
@@ -155,6 +195,13 @@ class _MyAppState extends State<MyApp> {
                                 .join(' / '),
                     ),
                   ),
+                  TextButton.icon(
+                    onPressed: _loadingChildren || _loadingMedia
+                        ? null
+                        : _scanVideos,
+                    icon: const Icon(Icons.video_file_outlined),
+                    label: const Text('Scan videos'),
+                  ),
                 ],
               ),
               if (_loadingChildren)
@@ -177,6 +224,21 @@ class _MyAppState extends State<MyApp> {
                     enabled: child.isFolder,
                     onTap: child.isFolder ? () => _openFolder(child) : null,
                   ),
+              if (_loadingMedia)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_mediaFiles.isNotEmpty) ...<Widget>[
+                const Divider(height: 32),
+                Text('Videos', style: Theme.of(context).textTheme.titleMedium),
+                for (final file in _mediaFiles)
+                  ListTile(
+                    leading: const Icon(Icons.movie_outlined),
+                    title: Text(file.name),
+                    subtitle: Text('${file.size} bytes\n${file.id}'),
+                  ),
+              ],
             ],
           ],
         ),

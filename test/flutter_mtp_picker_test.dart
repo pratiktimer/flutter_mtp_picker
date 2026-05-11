@@ -19,6 +19,15 @@ class MockFlutterMtpPickerPlatform
   }) => Future.value(const <MtpObject>[
     MtpObject(id: 'storage-1', name: 'Internal shared storage', isFolder: true),
   ]);
+
+  @override
+  Future<List<MtpFile>> listMediaFiles({
+    required String deviceId,
+    required String folderId,
+    required List<String> extensions,
+  }) => Future.value(const <MtpFile>[
+    MtpFile(id: 'file-1', name: 'lesson1.mp4', size: 123456),
+  ]);
 }
 
 void main() {
@@ -51,6 +60,20 @@ void main() {
           isFolder: true,
         ),
       ],
+    );
+  });
+
+  test('listMediaFiles', () async {
+    MockFlutterMtpPickerPlatform fakePlatform = MockFlutterMtpPickerPlatform();
+    FlutterMtpPickerPlatform.instance = fakePlatform;
+
+    expect(
+      await MtpPicker.listMediaFiles(
+        deviceId: 'device-1',
+        folderId: 'storage-1',
+        extensions: const <String>['mp4', 'mkv', 'avi'],
+      ),
+      const <MtpFile>[MtpFile(id: 'file-1', name: 'lesson1.mp4', size: 123456)],
     );
   });
 }
