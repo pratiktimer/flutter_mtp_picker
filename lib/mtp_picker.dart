@@ -33,6 +33,28 @@ class MtpPicker {
     );
   }
 
+  static Future<String> copyFileToLocal({
+    required String deviceId,
+    required String fileId,
+    required String destinationPath,
+  }) {
+    return FlutterMtpPickerPlatform.instance.copyFileToLocal(
+      deviceId: deviceId,
+      fileId: fileId,
+      destinationPath: destinationPath,
+    );
+  }
+
+  static Future<List<String>> copyFilesToLocal({
+    required String deviceId,
+    required Map<String, String> files,
+  }) {
+    return FlutterMtpPickerPlatform.instance.copyFilesToLocal(
+      deviceId: deviceId,
+      files: files,
+    );
+  }
+
   static Future<MtpFolderSelection?> pickFolder(BuildContext context) {
     return MtpFolderPicker.pickFolder(context);
   }

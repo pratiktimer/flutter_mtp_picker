@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_mtp_picker/flutter_mtp_picker.dart';
 import 'package:flutter_mtp_picker/flutter_mtp_picker_platform_interface.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 class FakeMtpPickerPlatform
@@ -9,23 +9,41 @@ class FakeMtpPickerPlatform
     implements FlutterMtpPickerPlatform {
   @override
   Future<List<MtpDevice>> getDevices() => Future.value(const <MtpDevice>[
-    MtpDevice(id: 'device-1', name: 'Android Phone'),
-  ]);
+        MtpDevice(id: 'device-1', name: 'Android Phone'),
+      ]);
 
   @override
   Future<List<MtpObject>> listChildren({
     required String deviceId,
     required String objectId,
-  }) => Future.value(const <MtpObject>[
-    MtpObject(id: 'storage-1', name: 'Internal shared storage', isFolder: true),
-  ]);
+  }) =>
+      Future.value(const <MtpObject>[
+        MtpObject(
+            id: 'storage-1', name: 'Internal shared storage', isFolder: true),
+      ]);
 
   @override
   Future<List<MtpFile>> listMediaFiles({
     required String deviceId,
     required String folderId,
     required List<String> extensions,
-  }) => Future.value(const <MtpFile>[]);
+  }) =>
+      Future.value(const <MtpFile>[]);
+
+  @override
+  Future<String> copyFileToLocal({
+    required String deviceId,
+    required String fileId,
+    required String destinationPath,
+  }) =>
+      Future.value(destinationPath);
+
+  @override
+  Future<List<String>> copyFilesToLocal({
+    required String deviceId,
+    required Map<String, String> files,
+  }) =>
+      Future.value(files.values.toList(growable: false));
 }
 
 void main() {

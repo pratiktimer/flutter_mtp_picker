@@ -14,6 +14,8 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <thread>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -296,6 +298,25 @@ uint64_t GetUnsignedLargeIntegerProperty(IPortableDeviceValues* values,
   return static_cast<uint64_t>(value);
 }
 
+DWORD CopyBufferSize(DWORD optimal_buffer_size) {
+  constexpr DWORD kDefaultBufferSize = 1024 * 1024;
+  constexpr DWORD kMaxBufferSize = 8 * 1024 * 1024;
+
+  if (optimal_buffer_size == 0) {
+    return kDefaultBufferSize;
+  }
+
+  if (optimal_buffer_size < kDefaultBufferSize) {
+    return kDefaultBufferSize;
+  }
+
+  if (optimal_buffer_size > kMaxBufferSize) {
+    return kMaxBufferSize;
+  }
+
+  return optimal_buffer_size;
+}
+
 HRESULT AppendObject(IPortableDeviceProperties* properties,
                      IPortableDeviceKeyCollection* keys,
                      const wchar_t* object_id,
@@ -553,6 +574,132 @@ HRESULT ListMtpMediaFiles(const std::string& device_id,
                             parent_id, extensions, files);
 }
 
+HRESULT CopyMtpResourceToLocal(IPortableDeviceResources* resources,
+                               const std::string& file_id,
+                               const std::string& destination_path) {
+  const std::wstring wide_file_id = Utf8ToWide(file_id);
+  const std::wstring wide_destination_path = Utf8ToWide(destination_path);
+  if (wide_file_id.empty() || wide_destination_path.empty()) {
+    return E_INVALIDARG;
+  }
+
+  DWORD optimal_buffer_size = 0;
+  ComPtr<IStream> source_stream;
+  HRESULT hr = resources->GetStream(wide_file_id.c_str(), WPD_RESOURCE_DEFAULT,
+                                    STGM_READ, &optimal_buffer_size,
+                                    &source_stream);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  HANDLE destination = CreateFileW(
+      wide_destination_path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+      FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+  if (destination == INVALID_HANDLE_VALUE) {
+    return HRESULT_FROM_WIN32(GetLastError());
+  }
+
+  const DWORD buffer_size = CopyBufferSize(optimal_buffer_size);
+  std::vector<BYTE> buffer(buffer_size);
+
+  while (true) {
+    ULONG bytes_read = 0;
+    hr = source_stream->Read(buffer.data(), buffer_size, &bytes_read);
+    if (FAILED(hr)) {
+      CloseHandle(destination);
+      return hr;
+    }
+    if (bytes_read == 0) {
+      break;
+    }
+
+    DWORD bytes_written = 0;
+    if (!WriteFile(destination, buffer.data(), bytes_read, &bytes_written,
+                   nullptr) ||
+        bytes_written != bytes_read) {
+      const DWORD error = GetLastError();
+      CloseHandle(destination);
+      return HRESULT_FROM_WIN32(error);
+    }
+  }
+
+  CloseHandle(destination);
+  return S_OK;
+}
+
+HRESULT OpenMtpTransferResources(const std::string& device_id,
+                                 IPortableDevice** device,
+                                 IPortableDeviceResources** resources) {
+  ComPtr<IPortableDevice> portable_device;
+  HRESULT hr = OpenPortableDevice(device_id, &portable_device);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDeviceContent> content;
+  hr = portable_device->Content(&content);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDeviceResources> transfer_resources;
+  hr = content->Transfer(&transfer_resources);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  *device = portable_device.Detach();
+  *resources = transfer_resources.Detach();
+  return S_OK;
+}
+
+HRESULT CopyMtpFileToLocal(const std::string& device_id,
+                           const std::string& file_id,
+                           const std::string& destination_path) {
+  ScopedComInitializer com;
+  HRESULT hr = com.result();
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDevice> device;
+  ComPtr<IPortableDeviceResources> resources;
+  hr = OpenMtpTransferResources(device_id, &device, &resources);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  return CopyMtpResourceToLocal(resources.Get(), file_id, destination_path);
+}
+
+HRESULT CopyMtpFilesToLocal(
+    const std::string& device_id,
+    const std::vector<std::pair<std::string, std::string>>& files,
+    flutter::EncodableList* copied_paths) {
+  ScopedComInitializer com;
+  HRESULT hr = com.result();
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  ComPtr<IPortableDevice> device;
+  ComPtr<IPortableDeviceResources> resources;
+  hr = OpenMtpTransferResources(device_id, &device, &resources);
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  for (const auto& file : files) {
+    hr = CopyMtpResourceToLocal(resources.Get(), file.first, file.second);
+    if (FAILED(hr)) {
+      return hr;
+    }
+    copied_paths->push_back(flutter::EncodableValue(file.second));
+  }
+
+  return S_OK;
+}
+
 bool ReadStringArgument(const flutter::EncodableMap& arguments,
                         const char* key,
                         std::string* value) {
@@ -590,6 +737,30 @@ bool ReadStringListArgument(const flutter::EncodableMap& arguments,
   return true;
 }
 
+bool ReadStringMapArgument(
+    const flutter::EncodableMap& arguments,
+    const char* key,
+    std::vector<std::pair<std::string, std::string>>* values) {
+  const auto it = arguments.find(flutter::EncodableValue(key));
+  if (it == arguments.end() ||
+      !std::holds_alternative<flutter::EncodableMap>(it->second)) {
+    return false;
+  }
+
+  const auto& map = std::get<flutter::EncodableMap>(it->second);
+  for (const auto& item : map) {
+    if (!std::holds_alternative<std::string>(item.first) ||
+        !std::holds_alternative<std::string>(item.second)) {
+      return false;
+    }
+
+    values->push_back(std::make_pair(std::get<std::string>(item.first),
+                                     std::get<std::string>(item.second)));
+  }
+
+  return true;
+}
+
 void ReplyWithHResultError(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result,
     const std::string& operation,
@@ -597,6 +768,11 @@ void ReplyWithHResultError(
   result->Error("windows_wpd_error",
                 operation + " failed: " + HResultMessage(hr),
                 flutter::EncodableValue(static_cast<int>(hr)));
+}
+
+template <typename Work>
+void RunInBackground(Work work) {
+  std::thread(std::move(work)).detach();
 }
 
 }  // namespace
@@ -682,15 +858,83 @@ void FlutterMtpPickerPlugin::HandleMethodCall(
       return;
     }
 
-    flutter::EncodableList files;
-    const HRESULT hr =
-        ListMtpMediaFiles(device_id, folder_id, extensions, &files);
-    if (FAILED(hr)) {
-      ReplyWithHResultError(std::move(result), "listMediaFiles", hr);
+    RunInBackground([device_id, folder_id, extensions,
+                     result = std::move(result)]() mutable {
+      flutter::EncodableList files;
+      const HRESULT hr =
+          ListMtpMediaFiles(device_id, folder_id, extensions, &files);
+      if (FAILED(hr)) {
+        ReplyWithHResultError(std::move(result), "listMediaFiles", hr);
+        return;
+      }
+
+      result->Success(flutter::EncodableValue(files));
+    });
+  } else if (method_call.method_name().compare("copyFileToLocal") == 0) {
+    const auto* arguments =
+        std::get_if<flutter::EncodableMap>(method_call.arguments());
+    if (arguments == nullptr) {
+      result->Error("invalid_arguments",
+                    "copyFileToLocal expects an argument map.");
       return;
     }
 
-    result->Success(flutter::EncodableValue(files));
+    std::string device_id;
+    std::string file_id;
+    std::string destination_path;
+    if (!ReadStringArgument(*arguments, "deviceId", &device_id) ||
+        !ReadStringArgument(*arguments, "fileId", &file_id) ||
+        !ReadStringArgument(*arguments, "destinationPath",
+                            &destination_path)) {
+      result->Error("invalid_arguments",
+                    "copyFileToLocal requires deviceId, fileId, and "
+                    "destinationPath.");
+      return;
+    }
+
+    RunInBackground([device_id, file_id, destination_path,
+                     result = std::move(result)]() mutable {
+      const HRESULT hr =
+          CopyMtpFileToLocal(device_id, file_id, destination_path);
+      if (FAILED(hr)) {
+        ReplyWithHResultError(std::move(result), "copyFileToLocal", hr);
+        return;
+      }
+
+      result->Success(flutter::EncodableValue(destination_path));
+    });
+  } else if (method_call.method_name().compare("copyFilesToLocal") == 0) {
+    const auto* arguments =
+        std::get_if<flutter::EncodableMap>(method_call.arguments());
+    if (arguments == nullptr) {
+      result->Error("invalid_arguments",
+                    "copyFilesToLocal expects an argument map.");
+      return;
+    }
+
+    std::string device_id;
+    std::vector<std::pair<std::string, std::string>> files;
+    if (!ReadStringArgument(*arguments, "deviceId", &device_id) ||
+        !ReadStringMapArgument(*arguments, "files", &files)) {
+      result->Error("invalid_arguments",
+                    "copyFilesToLocal requires deviceId and a string map "
+                    "named files.");
+      return;
+    }
+
+    RunInBackground(
+        [device_id, files = std::move(files),
+         result = std::move(result)]() mutable {
+          flutter::EncodableList copied_paths;
+          const HRESULT hr =
+              CopyMtpFilesToLocal(device_id, files, &copied_paths);
+          if (FAILED(hr)) {
+            ReplyWithHResultError(std::move(result), "copyFilesToLocal", hr);
+            return;
+          }
+
+          result->Success(flutter::EncodableValue(copied_paths));
+        });
   } else {
     result->NotImplemented();
   }

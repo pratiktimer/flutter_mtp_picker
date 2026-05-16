@@ -12,30 +12,38 @@ void main() {
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-          if (methodCall.method == 'listChildren') {
-            return <Map<String, Object?>>[
-              <String, Object?>{
-                'id': 'storage-1',
-                'name': 'Internal shared storage',
-                'isFolder': true,
-              },
-            ];
-          }
+      if (methodCall.method == 'listChildren') {
+        return <Map<String, Object?>>[
+          <String, Object?>{
+            'id': 'storage-1',
+            'name': 'Internal shared storage',
+            'isFolder': true,
+          },
+        ];
+      }
 
-          if (methodCall.method == 'listMediaFiles') {
-            return <Map<String, Object?>>[
-              <String, Object?>{
-                'id': 'file-1',
-                'name': 'lesson1.mp4',
-                'size': 123456,
-              },
-            ];
-          }
+      if (methodCall.method == 'listMediaFiles') {
+        return <Map<String, Object?>>[
+          <String, Object?>{
+            'id': 'file-1',
+            'name': 'lesson1.mp4',
+            'size': 123456,
+          },
+        ];
+      }
 
-          return <Map<String, Object?>>[
-            <String, Object?>{'id': 'device-1', 'name': 'Android Phone'},
-          ];
-        });
+      if (methodCall.method == 'copyFilesToLocal') {
+        return <String>['C:\\Temp\\lesson1.mp4', 'C:\\Temp\\lesson2.mp4'];
+      }
+
+      if (methodCall.method == 'copyFileToLocal') {
+        return 'C:\\Temp\\lesson1.mp4';
+      }
+
+      return <Map<String, Object?>>[
+        <String, Object?>{'id': 'device-1', 'name': 'Android Phone'},
+      ];
+    });
   });
 
   tearDown(() {
@@ -70,6 +78,30 @@ void main() {
         extensions: const <String>['mp4', '.mkv', 'avi'],
       ),
       const <MtpFile>[MtpFile(id: 'file-1', name: 'lesson1.mp4', size: 123456)],
+    );
+  });
+
+  test('copyFilesToLocal', () async {
+    expect(
+      await platform.copyFilesToLocal(
+        deviceId: 'device-1',
+        files: const <String, String>{
+          'file-1': 'C:\\Temp\\lesson1.mp4',
+          'file-2': 'C:\\Temp\\lesson2.mp4',
+        },
+      ),
+      const <String>['C:\\Temp\\lesson1.mp4', 'C:\\Temp\\lesson2.mp4'],
+    );
+  });
+
+  test('copyFileToLocal', () async {
+    expect(
+      await platform.copyFileToLocal(
+        deviceId: 'device-1',
+        fileId: 'file-1',
+        destinationPath: 'C:\\Temp\\lesson1.mp4',
+      ),
+      'C:\\Temp\\lesson1.mp4',
     );
   });
 }

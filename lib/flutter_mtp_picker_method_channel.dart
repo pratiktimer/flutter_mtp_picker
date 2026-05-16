@@ -53,4 +53,36 @@ class MethodChannelFlutterMtpPicker extends FlutterMtpPickerPlatform {
         .map(MtpFile.fromMap)
         .toList(growable: false);
   }
+
+  @override
+  Future<String> copyFileToLocal({
+    required String deviceId,
+    required String fileId,
+    required String destinationPath,
+  }) async {
+    final path = await methodChannel.invokeMethod<String>(
+      'copyFileToLocal',
+      <String, Object?>{
+        'deviceId': deviceId,
+        'fileId': fileId,
+        'destinationPath': destinationPath,
+      },
+    );
+    if (path == null || path.isEmpty) {
+      throw StateError('copyFileToLocal returned an empty path.');
+    }
+    return path;
+  }
+
+  @override
+  Future<List<String>> copyFilesToLocal({
+    required String deviceId,
+    required Map<String, String> files,
+  }) async {
+    final paths = await methodChannel.invokeListMethod<String>(
+      'copyFilesToLocal',
+      <String, Object?>{'deviceId': deviceId, 'files': files},
+    );
+    return (paths ?? <String>[]).toList(growable: false);
+  }
 }

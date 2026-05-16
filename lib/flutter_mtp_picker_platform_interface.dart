@@ -42,4 +42,19 @@ abstract class FlutterMtpPickerPlatform extends PlatformInterface {
   }) {
     throw UnimplementedError('listMediaFiles() has not been implemented.');
   }
+
+  Future<String> copyFileToLocal({
+    required String deviceId,
+    required String fileId,
+    required String destinationPath,
+  }) {
+    throw UnimplementedError('copyFileToLocal() has not been implemented.');
+  }
+
+  Future<List<String>> copyFilesToLocal({
+    required String deviceId,
+    required Map<String, String> files,
+  }) {
+    throw UnimplementedError('copyFilesToLocal() has not been implemented.');
+  }
 }

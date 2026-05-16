@@ -268,8 +268,8 @@ class _Header extends StatelessWidget {
     final title = device == null
         ? 'Select MTP device'
         : path.isEmpty
-        ? device!.name
-        : path.map((MtpObject folder) => folder.name).join(' / ');
+            ? device!.name
+            : path.map((MtpObject folder) => folder.name).join(' / ');
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
