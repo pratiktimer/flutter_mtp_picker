@@ -444,7 +444,9 @@ static void CompleteOnMain(FlutterResult result, id value) {
 
 - (BOOL)parseFolderObjectId:(NSString *)objectId storageId:(uint32_t *)storageId parentId:(uint32_t *)parentId {
   if ([objectId hasPrefix:@"storage:"]) {
-    *storageId = (uint32_t)[[objectId substringFromIndex:@"storage:".length] unsignedLongLongValue];
+    if (![self parseUInt32:[objectId substringFromIndex:@"storage:".length] value:storageId]) {
+      return NO;
+    }
     *parentId = kMtpRootParentId;
     return *storageId != 0;
   }
@@ -464,9 +466,26 @@ static void CompleteOnMain(FlutterResult result, id value) {
     return NO;
   }
 
-  *storageId = (uint32_t)parts[1].unsignedLongLongValue;
-  *itemId = (uint32_t)parts[2].unsignedLongLongValue;
+  if (![self parseUInt32:parts[1] value:storageId] || ![self parseUInt32:parts[2] value:itemId]) {
+    return NO;
+  }
   return *storageId != 0 && *itemId != 0;
+}
+
+- (BOOL)parseUInt32:(NSString *)string value:(uint32_t *)value {
+  const char *rawValue = string.UTF8String;
+  if (rawValue == NULL || rawValue[0] == '\0') {
+    return NO;
+  }
+
+  char *end = NULL;
+  unsigned long long parsedValue = strtoull(rawValue, &end, 10);
+  if (end == rawValue || *end != '\0' || parsedValue > UINT32_MAX) {
+    return NO;
+  }
+
+  *value = (uint32_t)parsedValue;
+  return YES;
 }
 
 - (NSString *)stringValue:(id)value {
