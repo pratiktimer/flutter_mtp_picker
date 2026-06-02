@@ -240,8 +240,8 @@ class _MtpFolderPickerDialogState extends State<_MtpFolderPickerDialog> {
                         ? null
                         : widget.allowMultiple
                             ? _selectedFolders.isEmpty
-                                  ? null
-                                  : _chooseSelectedFolders
+                                ? null
+                                : _chooseSelectedFolders
                             : _chooseCurrentFolder,
                     child: Text(
                       widget.allowMultiple

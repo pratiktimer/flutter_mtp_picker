@@ -1,6 +1,6 @@
 name: flutter_mtp_picker
-description: A Flutter Windows plugin for browsing Android and camera storage over USB MTP using Windows Portable Devices.
-version: 0.0.2
+description: A Flutter desktop plugin for browsing phone and camera storage over USB MTP/ImageCapture-style device APIs.
+version: 0.1.0
 repository: https://github.com/pratiktimer/flutter_mtp_picker
 issue_tracker: https://github.com/pratiktimer/flutter_mtp_picker/issues
 
@@ -30,3 +30,5 @@ flutter:
     platforms:
       windows:
         pluginClass: FlutterMtpPickerPluginCApi
+      macos:
+        pluginClass: FlutterMtpPickerPlugin

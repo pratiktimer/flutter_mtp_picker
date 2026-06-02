@@ -1,3 +1,14 @@
+## 0.1.0
+
+- Added a macOS plugin target backed by Apple's ImageCaptureCore framework.
+- Added macOS device enumeration, folder browsing, recursive media listing, and local copy support for ImageCaptureCore camera/PTP-compatible devices.
+- Updated package metadata to advertise desktop support beyond Windows.
+
+## 0.0.3
+
+- Fixed the multi-folder picker dialog reference used by `pickFolders`.
+- Fixed the `pickFolders` return type so the package can compile on non-Windows Flutter builds.
+
 ## 0.0.2
 
 - Added local copy APIs for single files and batches of MTP files.
