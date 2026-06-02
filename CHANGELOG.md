@@ -3,6 +3,7 @@
 - Added a macOS plugin target backed by `libmtp`.
 - Added macOS device enumeration, folder browsing, recursive media listing, and local copy support for USB MTP devices.
 - Updated package metadata to advertise desktop support beyond Windows.
+- Documented the Homebrew `libmtp` requirement and macOS USB/MTP setup notes.
 
 ## 0.0.3
 

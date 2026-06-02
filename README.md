@@ -4,11 +4,13 @@ A Flutter desktop plugin for browsing phones, cameras, and other USB MTP media d
 
 Windows exposes MTP devices as portable-device object trees, not normal filesystem paths. This plugin returns stable MTP device IDs and object IDs so apps can browse those devices without faking paths like `C:\...`.
 
-On macOS, the plugin uses `libmtp` so Android phones in File Transfer / MTP mode can be browsed over USB. Install it before building a macOS app that uses this package:
+On macOS, the plugin uses `libmtp` so Android phones in File Transfer / MTP mode can be browsed over USB. Install it before building or running a macOS app that uses this package:
 
 ```bash
 brew install libmtp
 ```
+
+The macOS podspec links against Homebrew's default `libmtp` locations on Apple Silicon (`/opt/homebrew`) and Intel Macs (`/usr/local`).
 
 ## Features
 
@@ -236,14 +238,24 @@ return, then delete the local file and stop importing the remaining files.
 - Very large recursive scans can take time because MTP enumeration is device-backed USB communication.
 - The copy methods do not expose a native abort handle. Use cooperative cancellation in your app when copying very large files or whole courses.
 - On macOS, install `libmtp` with Homebrew and connect the Android phone in File Transfer / MTP mode before browsing.
+- On macOS, close other apps that may hold the MTP session, such as Android File Transfer or another media importer.
+- If a macOS build cannot find `libmtp`, confirm `brew --prefix libmtp` is either `/opt/homebrew` or `/usr/local`, then run `flutter clean` and rebuild.
 
 ## Example
 
-Run the included Windows example:
+Run the included example:
 
 ```powershell
 cd example
 flutter run -d windows
+```
+
+On macOS:
+
+```bash
+brew install libmtp
+cd example
+flutter run -d macos
 ```
 
 Connect an Android phone by USB, unlock it, and choose File Transfer / MTP mode.
