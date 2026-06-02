@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'flutter_mtp_picker'
-  s.version          = '0.1.1'
+  s.version          = '0.1.2'
   s.summary          = 'Browse and copy files from USB MTP devices.'
   s.description      = <<-DESC
 A Flutter desktop plugin for browsing phone and camera storage over USB MTP APIs.

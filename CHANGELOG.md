@@ -1,3 +1,7 @@
+## 0.1.2
+
+- Bumped package version for another macOS verification pass.
+
 ## 0.1.1
 
 - Improved macOS setup documentation for the Homebrew `libmtp` dependency.
