@@ -1,3 +1,8 @@
+## 0.1.1
+
+- Improved macOS setup documentation for the Homebrew `libmtp` dependency.
+- Added macOS troubleshooting notes for Homebrew paths and USB/MTP session conflicts.
+
 ## 0.1.0
 
 - Added a macOS plugin target backed by `libmtp`.
