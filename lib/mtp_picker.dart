@@ -58,4 +58,8 @@ class MtpPicker {
   static Future<MtpFolderSelection?> pickFolder(BuildContext context) {
     return MtpFolderPicker.pickFolder(context);
   }
+
+  static Future<List<MtpFolderSelection>?> pickFolders(BuildContext context) {
+    return MtpFolderPicker.pickFolders(context);
+  }
 }

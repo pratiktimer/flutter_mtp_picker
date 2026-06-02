@@ -17,12 +17,31 @@ class MtpFolderPicker {
       },
     );
   }
+
+  static Future<List<MtpFolderSelection>?> pickFolders(
+    BuildContext context, {
+    List<MtpDevice>? devices,
+  }) {
+    return showDialog<List<MtpFolderSelection>>(
+      context: context,
+      builder: (BuildContext context) {
+        return _MtpFolderPickerDialog(
+          initialDevices: devices,
+          allowMultiple: true,
+        );
+      },
+    );
+  }
 }
 
 class _MtpFolderPickerDialog extends StatefulWidget {
-  const _MtpFolderPickerDialog({this.initialDevices});
+  const _MtpFolderPickerDialog({
+    this.initialDevices,
+    this.allowMultiple = false,
+  });
 
   final List<MtpDevice>? initialDevices;
+  final bool allowMultiple;
 
   @override
   State<_MtpFolderPickerDialog> createState() => _MtpFolderPickerDialogState();
@@ -33,6 +52,8 @@ class _MtpFolderPickerDialogState extends State<_MtpFolderPickerDialog> {
   List<MtpObject> _children = const <MtpObject>[];
   final List<MtpObject> _path = <MtpObject>[];
   MtpDevice? _device;
+  final Map<String, MtpFolderSelection> _selectedFolders =
+      <String, MtpFolderSelection>{};
   bool _loadingDevices = true;
   bool _loadingChildren = false;
   String? _error;
@@ -83,6 +104,7 @@ class _MtpFolderPickerDialogState extends State<_MtpFolderPickerDialog> {
       _device = device;
       _children = const <MtpObject>[];
       _path.clear();
+      _selectedFolders.clear();
       _loadingChildren = true;
       _error = null;
     });
@@ -153,6 +175,39 @@ class _MtpFolderPickerDialogState extends State<_MtpFolderPickerDialog> {
     ).pop(MtpFolderSelection(device: device, folder: folder));
   }
 
+  void _chooseSelectedFolders() {
+    Navigator.of(context).pop(
+      _selectedFolders.values.toList(growable: false),
+    );
+  }
+
+  void _toggleFolder(MtpObject folder, bool selected) {
+    final device = _device;
+    if (device == null) return;
+
+    setState(() {
+      final key = _selectionKey(device, folder);
+      if (selected) {
+        _selectedFolders[key] = MtpFolderSelection(
+          device: device,
+          folder: folder,
+        );
+      } else {
+        _selectedFolders.remove(key);
+      }
+    });
+  }
+
+  bool _isSelected(MtpObject folder) {
+    final device = _device;
+    if (device == null) return false;
+    return _selectedFolders.containsKey(_selectionKey(device, folder));
+  }
+
+  static String _selectionKey(MtpDevice device, MtpObject folder) {
+    return '${device.id}:${folder.id}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -163,6 +218,7 @@ class _MtpFolderPickerDialogState extends State<_MtpFolderPickerDialog> {
             _Header(
               device: _device,
               path: _path,
+              selectedCount: _selectedFolders.length,
               canGoBack: _path.isNotEmpty && !_loadingChildren,
               onBack: _goBack,
             ),
@@ -182,8 +238,16 @@ class _MtpFolderPickerDialogState extends State<_MtpFolderPickerDialog> {
                   FilledButton(
                     onPressed: _device == null || _loadingChildren
                         ? null
-                        : _chooseCurrentFolder,
-                    child: const Text('Choose folder'),
+                        : widget.allowMultiple
+                            ? _selectedFolders.isEmpty
+                                  ? null
+                                  : _chooseSelectedFolders
+                            : _chooseCurrentFolder,
+                    child: Text(
+                      widget.allowMultiple
+                          ? 'Choose ${_selectedFolders.length} folders'
+                          : 'Choose folder',
+                    ),
                   ),
                 ],
               ),
@@ -231,19 +295,60 @@ class _MtpFolderPickerDialogState extends State<_MtpFolderPickerDialog> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_children.isEmpty) {
+    if (_children.isEmpty && !widget.allowMultiple) {
       return const Center(child: Text('No folders here.'));
     }
 
     return ListView.builder(
-      itemCount: _children.length,
+      itemCount: _children.length + (widget.allowMultiple ? 1 : 0),
       itemBuilder: (BuildContext context, int index) {
-        final child = _children[index];
-        return ListTile(
-          leading: const Icon(Icons.folder_outlined),
+        if (widget.allowMultiple && index == 0) {
+          final current = _currentFolder;
+          if (current == null) return const SizedBox.shrink();
+
+          return CheckboxListTile(
+            secondary: const Icon(Icons.folder_special_outlined),
+            title: Text(
+              _path.isEmpty ? 'Select device root' : 'Select current folder',
+            ),
+            subtitle: Text(current.name),
+            value: _isSelected(current),
+            onChanged: (bool? value) {
+              _toggleFolder(current, value ?? false);
+            },
+          );
+        }
+
+        final childIndex = widget.allowMultiple ? index - 1 : index;
+        if (_children.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: Text('No folders here.')),
+          );
+        }
+
+        final child = _children[childIndex];
+        if (!widget.allowMultiple) {
+          return ListTile(
+            leading: const Icon(Icons.folder_outlined),
+            title: Text(child.name),
+            subtitle: Text(child.id),
+            onTap: () => _openFolder(child),
+          );
+        }
+
+        return CheckboxListTile(
+          secondary: IconButton(
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Open folder',
+            onPressed: () => _openFolder(child),
+          ),
           title: Text(child.name),
           subtitle: Text(child.id),
-          onTap: () => _openFolder(child),
+          value: _isSelected(child),
+          onChanged: (bool? value) {
+            _toggleFolder(child, value ?? false);
+          },
         );
       },
     );
@@ -254,12 +359,14 @@ class _Header extends StatelessWidget {
   const _Header({
     required this.device,
     required this.path,
+    required this.selectedCount,
     required this.canGoBack,
     required this.onBack,
   });
 
   final MtpDevice? device;
   final List<MtpObject> path;
+  final int selectedCount;
   final bool canGoBack;
   final VoidCallback onBack;
 
@@ -281,11 +388,21 @@ class _Header extends StatelessWidget {
             tooltip: 'Back',
           ),
           Expanded(
-            child: Text(
-              title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                if (selectedCount > 0)
+                  Text(
+                    '$selectedCount selected',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+              ],
             ),
           ),
         ],
