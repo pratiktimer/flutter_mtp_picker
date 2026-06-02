@@ -1,7 +1,7 @@
 ## 0.1.0
 
-- Added a macOS plugin target backed by Apple's ImageCaptureCore framework.
-- Added macOS device enumeration, folder browsing, recursive media listing, and local copy support for ImageCaptureCore camera/PTP-compatible devices.
+- Added a macOS plugin target backed by `libmtp`.
+- Added macOS device enumeration, folder browsing, recursive media listing, and local copy support for USB MTP devices.
 - Updated package metadata to advertise desktop support beyond Windows.
 
 ## 0.0.3

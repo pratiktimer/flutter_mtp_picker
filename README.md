@@ -1,10 +1,14 @@
 # flutter_mtp_picker
 
-A Flutter desktop plugin for browsing phones, cameras, and other USB media devices through platform-native APIs.
+A Flutter desktop plugin for browsing phones, cameras, and other USB MTP media devices through platform-native APIs.
 
 Windows exposes MTP devices as portable-device object trees, not normal filesystem paths. This plugin returns stable MTP device IDs and object IDs so apps can browse those devices without faking paths like `C:\...`.
 
-On macOS, the plugin uses Apple's ImageCaptureCore framework. That framework exposes camera/PTP-compatible devices and some phones, but macOS does not provide a public generic Android MTP filesystem API. If an Android device does not appear in Image Capture on macOS, this plugin cannot browse it there.
+On macOS, the plugin uses `libmtp` so Android phones in File Transfer / MTP mode can be browsed over USB. Install it before building a macOS app that uses this package:
+
+```bash
+brew install libmtp
+```
 
 ## Features
 
@@ -14,14 +18,14 @@ On macOS, the plugin uses Apple's ImageCaptureCore framework. That framework exp
 - Show a Flutter folder picker dialog for MTP devices.
 - Copy one or more MTP files to local storage.
 - Windows desktop implementation using `IPortableDeviceManager`, `IPortableDevice`, and `IPortableDeviceContent`.
-- macOS desktop implementation using ImageCaptureCore.
+- macOS desktop implementation using `libmtp`.
 
 ## Platform support
 
 | Platform | Status |
 | --- | --- |
 | Windows | Supported |
-| macOS | Supported for ImageCaptureCore camera/PTP-compatible devices |
+| macOS | Supported with Homebrew `libmtp` installed |
 | Android, iOS, Linux, Web | Not implemented |
 
 ## Usage
@@ -231,7 +235,7 @@ return, then delete the local file and stop importing the remaining files.
 - Some devices may expose storage through functional objects before normal folders appear.
 - Very large recursive scans can take time because MTP enumeration is device-backed USB communication.
 - The copy methods do not expose a native abort handle. Use cooperative cancellation in your app when copying very large files or whole courses.
-- On macOS, device visibility depends on ImageCaptureCore support for the connected device. Some Android phones expose no browsable storage through Apple's public APIs.
+- On macOS, install `libmtp` with Homebrew and connect the Android phone in File Transfer / MTP mode before browsing.
 
 ## Example
 
